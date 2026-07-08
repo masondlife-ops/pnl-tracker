@@ -158,23 +158,27 @@
   }
   .theme-toggle {
     position: relative;
-    width: 46px; height: 26px;
+    width: 30px; height: 16px;
     flex: none;
+    align-self: center;
+    margin-left: 4px;
     border-radius: 999px;
-    border: 1px solid var(--baseline);
-    background: var(--page);
+    border: 1px solid var(--grid);
+    background: transparent;
     cursor: pointer;
     padding: 0;
+    opacity: 0.7;
   }
+  .theme-toggle:hover { opacity: 1; }
   .theme-toggle .knob {
     position: absolute; top: 2px; left: 2px;
-    width: 20px; height: 20px;
+    width: 10px; height: 10px;
     border-radius: 50%;
     background: var(--text-muted);
     transition: left .15s ease, background .15s ease;
   }
-  .theme-toggle.dark { background: var(--series-1); border-color: var(--series-1); }
-  .theme-toggle.dark .knob { left: 22px; background: #fff; }
+  .theme-toggle.dark { background: var(--grid); border-color: var(--grid); }
+  .theme-toggle.dark .knob { left: 16px; background: var(--text-secondary); }
   .settings-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--grid); font-size: 13px; color: var(--text-muted); flex-wrap: wrap; }
   .settings-row input { width: 80px; }
 
@@ -221,7 +225,6 @@
     <div class="sub">Deals, expenses, and profit roll up automatically by month</div>
     </div>
     <div class="toolbar">
-      <button class="theme-toggle" id="themeBtn" role="switch" aria-checked="false" title="Switch between light and dark mode"><span class="knob"></span></button>
       <div class="month-nav">
         <button class="btn icon" id="prevMonth" title="Previous month">&#9664;</button>
         <span class="label" id="monthLabel"></span>
@@ -233,6 +236,7 @@
       <button class="btn secondary small" id="backupBtn">Backup</button>
       <button class="btn secondary small" id="restoreBtn">Restore</button>
       <input type="file" id="restoreFile" accept=".json" style="display:none">
+      <button class="theme-toggle" id="themeBtn" role="switch" aria-checked="false" title="Switch between light and dark mode"><span class="knob"></span></button>
     </div>
   </header>
 
