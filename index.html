@@ -201,6 +201,8 @@
         <button class="btn icon" id="nextMonth" title="Next month">&#9654;</button>
       </div>
       <button class="btn secondary small" id="exportCsv">Export CSV</button>
+      <button class="btn secondary small" id="importBtn">Import CSV</button>
+      <input type="file" id="importFile" accept=".csv,text/csv" style="display:none">
       <button class="btn secondary small" id="backupBtn">Backup</button>
       <button class="btn secondary small" id="restoreBtn">Restore</button>
       <input type="file" id="restoreFile" accept=".json" style="display:none">
@@ -828,6 +830,158 @@
     ]);
     var csv = rows.map(function (r) { return r.map(csvCell).join(","); }).join("\n");
     download("pnl-" + currentMonth + ".csv", csv, "text/csv");
+  });
+
+  /* ---------- CSV import ---------- */
+
+  function parseCSV(text) {
+    var rows = [], row = [], cur = "", inQ = false;
+    for (var i = 0; i < text.length; i++) {
+      var c = text[i];
+      if (inQ) {
+        if (c === '"') {
+          if (text[i + 1] === '"') { cur += '"'; i++; } else inQ = false;
+        } else cur += c;
+      } else if (c === '"') inQ = true;
+      else if (c === ",") { row.push(cur); cur = ""; }
+      else if (c === "\n" || c === "\r") {
+        if (c === "\r" && text[i + 1] === "\n") i++;
+        row.push(cur); rows.push(row); row = []; cur = "";
+      } else cur += c;
+    }
+    if (cur !== "" || row.length) { row.push(cur); rows.push(row); }
+    return rows;
+  }
+
+  function pad2(n) { return String(n).padStart(2, "0"); }
+  function normDate(s) {
+    s = String(s == null ? "" : s).trim();
+    var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (m) return m[1] + "-" + pad2(m[2]) + "-" + pad2(m[3]);
+    m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+    if (m) return (m[3].length === 2 ? "20" + m[3] : m[3]) + "-" + pad2(m[1]) + "-" + pad2(m[2]);
+    return null;
+  }
+  function moneyNum(s) {
+    if (s == null || String(s).trim() === "") return null;
+    var n = parseFloat(String(s).replace(/[$,\s]/g, ""));
+    return isNaN(n) ? null : n;
+  }
+  function headerIndex(lower, names) {
+    for (var i = 0; i < lower.length; i++) {
+      if (names.indexOf(lower[i]) !== -1) return i;
+    }
+    return -1;
+  }
+
+  $("importBtn").addEventListener("click", function () { $("importFile").click(); });
+  $("importFile").addEventListener("change", function () {
+    var file = this.files[0];
+    this.value = "";
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      var rows = parseCSV(String(reader.result));
+      var addedDeals = 0, addedExps = 0, dupes = 0, lastDate = null;
+      var mode = null, cols = null;
+      var dealKeys = {}, expKeys = {};
+      state.deals.forEach(function (d) {
+        dealKeys[d.date + "|" + (d.client || "").toLowerCase() + "|" + (d.ap == null ? "" : d.ap)] = 1;
+      });
+      state.expenses.forEach(function (e) {
+        expKeys[e.date + "|" + (e.item || "").toLowerCase() + "|" + (e.price == null ? "" : e.price)] = 1;
+      });
+
+      rows.forEach(function (r) {
+        var joined = r.join(" ").trim();
+        if (!joined) return;
+        var lower = r.map(function (c) { return c.trim().toLowerCase(); });
+        if (headerIndex(lower, ["date"]) !== -1 && headerIndex(lower, ["client", "client name", "name"]) !== -1) {
+          mode = "deals";
+          cols = {
+            date: headerIndex(lower, ["date"]),
+            client: headerIndex(lower, ["client", "client name", "name"]),
+            policy: headerIndex(lower, ["policy", "policy type"]),
+            carrier: headerIndex(lower, ["carrier"]),
+            face: headerIndex(lower, ["face", "face ($)", "face $"]),
+            monthly: headerIndex(lower, ["monthly", "monthly ($)", "monthly $"]),
+            ap: headerIndex(lower, ["ap", "ap ($)", "ap $", "annual premium"]),
+            com: headerIndex(lower, ["commission", "com", "com ($)", "commission ($)"]),
+            lead: headerIndex(lower, ["lead type", "lead"]),
+            status: headerIndex(lower, ["status", "app status"]),
+            inforce: headerIndex(lower, ["in force", "in force (y/n)", "inforce"]),
+            notes: headerIndex(lower, ["notes", "note"])
+          };
+          return;
+        }
+        if (headerIndex(lower, ["date"]) !== -1 && headerIndex(lower, ["item"]) !== -1 && headerIndex(lower, ["price", "amount", "cost"]) !== -1) {
+          mode = "exp";
+          cols = {
+            date: headerIndex(lower, ["date"]),
+            item: headerIndex(lower, ["item"]),
+            kind: headerIndex(lower, ["type"]),
+            lead: headerIndex(lower, ["lead type", "lead"]),
+            price: headerIndex(lower, ["price", "amount", "cost"])
+          };
+          return;
+        }
+        if (/^pnl\b/i.test(joined)) { mode = null; cols = null; return; }
+        if (!mode || !cols) return;
+
+        var get = function (k) { return cols[k] >= 0 && cols[k] < r.length ? String(r[cols[k]]).trim() : ""; };
+        var date = normDate(get("date"));
+        if (!date) return;
+
+        if (mode === "deals") {
+          var client = get("client");
+          if (!client) return;
+          var ap = moneyNum(get("ap"));
+          var key = date + "|" + client.toLowerCase() + "|" + (ap == null ? "" : ap);
+          if (dealKeys[key]) { dupes++; return; }
+          dealKeys[key] = 1;
+          state.deals.push({
+            id: uid(), date: date, client: client,
+            policy: get("policy"), carrier: get("carrier"),
+            face: moneyNum(get("face")), monthly: moneyNum(get("monthly")),
+            ap: ap, com: moneyNum(get("com")),
+            lead: get("lead"),
+            status: get("status") || "Submitted",
+            inforce: /^(y|yes|true|1)/i.test(get("inforce")),
+            notes: get("notes")
+          });
+          addedDeals++; lastDate = date;
+        } else {
+          var item = get("item");
+          if (!item) return;
+          var price = moneyNum(get("price"));
+          var key2 = date + "|" + item.toLowerCase() + "|" + (price == null ? "" : price);
+          if (expKeys[key2]) { dupes++; return; }
+          expKeys[key2] = 1;
+          var kindRaw = get("kind");
+          var kind = kindRaw ? (/lead/i.test(kindRaw) ? "lead" : "other") : (/lead/i.test(item) ? "lead" : "other");
+          state.expenses.push({
+            id: uid(), date: date, item: item, kind: kind,
+            lead: kind === "lead" ? get("lead") : "",
+            price: price
+          });
+          addedExps++; lastDate = date;
+        }
+      });
+
+      if (!addedDeals && !addedExps) {
+        alert(dupes
+          ? "Nothing new to import — all " + dupes + " matching rows are already in the tracker."
+          : "Couldn't find deals or expenses in that file.\n\nIt needs a header row like:\nDate, Client, Policy, Carrier, Face, Monthly, AP, Commission, Lead type, Status, In force, Notes\n\nor for expenses:\nDate, Item, Type, Lead type, Price");
+        return;
+      }
+      save();
+      if (lastDate) currentMonth = lastDate.slice(0, 7);
+      render();
+      alert("Imported " + addedDeals + (addedDeals === 1 ? " deal" : " deals") + " and " +
+        addedExps + (addedExps === 1 ? " expense" : " expenses") +
+        (dupes ? " (" + dupes + " duplicate" + (dupes === 1 ? "" : "s") + " skipped)" : "") + ".");
+    };
+    reader.readAsText(file);
   });
 
   $("backupBtn").addEventListener("click", function () {
