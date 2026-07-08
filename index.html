@@ -218,7 +218,7 @@
       <div class="field"><label for="d-carrier">Carrier</label><input type="text" id="d-carrier" class="narrow" list="carrierList" placeholder="MOO"></div>
       <div class="field"><label for="d-face">Face ($)</label><input type="number" id="d-face" class="narrow" min="0" step="0.01" placeholder="0"></div>
       <div class="field"><label for="d-monthly">Monthly ($)</label><input type="number" id="d-monthly" class="narrow" min="0" step="0.01" placeholder="0"></div>
-      <div class="field"><label for="d-ap">AP ($)</label><input type="number" id="d-ap" class="narrow" min="0" step="0.01" placeholder="0"></div>
+      <div class="field"><label for="d-ap">AP ($)</label><input type="number" id="d-ap" class="narrow" min="0" step="0.01" placeholder="auto"></div>
       <div class="field"><label for="d-com">Commission ($)</label><input type="number" id="d-com" class="narrow" min="0" step="0.01" placeholder="auto"></div>
       <div class="field"><label for="d-lead">Lead type</label><input type="text" id="d-lead" class="wide" list="leadList" placeholder="Goat aged $3"></div>
       <div class="field"><label for="d-status">Status</label>
@@ -613,6 +613,8 @@
 
   function resetDealForm() {
     editingId = null;
+    apAutoFilled = false;
+    comAutoFilled = false;
     $("dealForm").reset();
     $("d-date").value = defaultDateForMonth();
     $("dealFormTitle").textContent = "Add a deal";
@@ -624,6 +626,8 @@
     var d = state.deals.find(function (x) { return x.id === id; });
     if (!d) return;
     editingId = id;
+    apAutoFilled = false;
+    comAutoFilled = false;
     $("d-date").value = d.date;
     $("d-client").value = d.client || "";
     $("d-policy").value = d.policy || "";
@@ -673,17 +677,29 @@
 
   $("dealCancel").addEventListener("click", function () { resetDealForm(); });
 
-  // pre-fill commission from AP using the default rate (only when com is empty or was auto-filled)
+  // auto-fill AP from monthly premium (AP = monthly × 12) and commission from AP,
+  // but never overwrite a value the user typed themselves
+  var apAutoFilled = false;
   var comAutoFilled = false;
-  $("d-ap").addEventListener("input", function () {
+  function updateCom() {
     var rate = num($("comRate").value);
-    var ap = num(this.value);
+    var ap = num($("d-ap").value);
     var comEl = $("d-com");
     if (rate != null && ap != null && (comEl.value === "" || comAutoFilled)) {
       comEl.value = (ap * rate / 100).toFixed(2);
       comAutoFilled = true;
     }
+  }
+  $("d-monthly").addEventListener("input", function () {
+    var m = num(this.value);
+    var apEl = $("d-ap");
+    if (m != null && (apEl.value === "" || apAutoFilled)) {
+      apEl.value = (m * 12).toFixed(2);
+      apAutoFilled = true;
+      updateCom();
+    }
   });
+  $("d-ap").addEventListener("input", function () { apAutoFilled = false; updateCom(); });
   $("d-com").addEventListener("input", function () { comAutoFilled = false; });
 
   $("comRate").addEventListener("change", function () {
